@@ -1,0 +1,245 @@
+#Tim Kerr
+#Aqualinc
+#October 2015
+
+#This function takes input data for a catchment about vadose zone recharge, groundwater pumping, soil, the vadose zone and aquifer properties
+#and simulates observed streamflow and well levels.
+#Equations are from:
+# Bidwell, V., Burbery, L., 2011. Groundwater Data Analysis - quantifying aquifer dynamics. Prepared for Envirolink Project 420-NRLC50 (No. 4110/1). Lincoln Ventures Ltd.
+# which in turn cites the following, though note that the symbol labels are different.
+# Bidwell, V.J., Stenger, R., Barkle, G.F., 2008. Dynamic analysis of groundwater discharge and partial-area contribution to Pukemanga Stream, New Zealand. Hydrol. Earth Syst. Sci. 12, 975-987. doi:10.5194/hess-12-975-2008
+#
+# Sloan, W.T., 2000. A physics-based function for modeling transient groundwater discharge at the watershed scale. Water Resour. Res. 36, 225-241. doi:10.1029/1999WR900221
+#
+#At no extra charge are a couple of plot functions at the end, one called bouss.plot() and the other bouss.plot2() which both take the result from bouss.eigen as their arguments.
+
+#**********************************
+#  Version Description                                Person        Date
+#  0.0   Initial version                              Tim Kerr      2nd October 2015 
+
+#**********************************
+# To-do list
+# Ideally the recharge data originates from surface water inputs (irrigation and rain and higher aquifers)
+#This needs a new function to be written
+#
+
+#bouss.eigen <- function(WellDistance=65340,Storativity=0.0075,Transmisivity=65340000,
+bouss.eigen <- function(WellDistance=65340,Storativity=0.0075,Transmisivity=71940000,
+                        ZoneLengths=c(35600,5700,8900,15800),DischargeScaleFactor=500,
+                        RechargeData=ZoneVadoseRecharge)
+#                        RechargeFileName="Vadose_Recharge_data.csv")
+{
+#Load specific libraries
+library(hydroTSM) #this is used to generate the flow duration curve from the discharge timeseries
+library(TTR)      #this provides the MovingAverage functions (in particular SMA, Simple Moving Average and EMA exponential weighted moving average)
+
+#Fish Creek Values
+#WellDistance               <-  65340                                                              #distance the well is from the upper edge of the groundwater zone in metres
+#Storativity                 <-  0.0075                                                             #the groundwater storativity, i.e. the fraction of space in the groundwater that is available for water
+#Transmisivity               <-  65340000                                                           #the two dimensional flow rate of water through the groundwater m2 per day
+#ZoneLengths                <-  c(35600,5700,8900,15800)
+#DischargeScaleFactor      <-  500                                                               #discharge to groundwater level response gain factor
+#RechargeFileName            <-  "Vadose_Recharge_data.csv"
+
+NumberEigenvalues          <-  66                                                                #The greater the number the greater the convergence to a true Boussinesq estimate. Cost is time and memeory
+
+#RechargeData               <-  read.csv(RechargeFileName)                              #this is the daily timeseries of observed discharge and groundwater level, vadose recharge for each zone, river recharge to groundwater and groundwater pumping in mm
+NumberOfZones               <-  length(ZoneLengths)
+Zone_attribute_names        <-  c("length","recharge_factors","river_recharge","start_length_fraction","end_length_fraction")  #the length fractions refers to the length, as a fraction of the the total groundwater length, where the individual zones start and finish
+zone_attributes             <-  array(0, dim=c(NumberOfZones,length(Zone_attribute_names)),
+                                      dimnames=list(NULL,Zone_attribute_names))                    #This is simply an array to hold all the zone attributes
+zone_attributes[,"length"]  <-  ZoneLengths
+
+
+# Two sets of eigenvalues are calculated. One for the surface recharge into the groundwater which may be broken up into zones with each having their own eigenvalues,
+# and one for the groundwater itself which is just one zone.
+
+zone_eigenfunction_parameters     <-  c("c_ij")                                   #c_ij is taken from Bidwell 2008 equation A6, except it is calculated for each zone
+zone_eigenvalues                  <-  array(0, dim=c(NumberOfZones,NumberEigenvalues,length(zone_eigenfunction_parameters)),
+                                      dimnames=list(NULL,NULL,zone_eigenfunction_parameters))
+general_eigenfunction_parameters  <-  c("k_i","P_i","F_i")                                          #k_i is from Bidwell 2011 equation 8
+GeneralEigenvalues               <-  array(0, dim=c(length(general_eigenfunction_parameters),NumberEigenvalues),
+                                      dimnames=list(general_eigenfunction_parameters,NULL))
+
+#derived parameters
+groundwater_length                <-  sum(zone_attributes[,"length"])                                   #this is the total length of the groundwater zones
+T_over_SL2                        <-  Transmisivity /(Storativity * groundwater_length^2)               #this is used in the model
+zone_attributes[,"start_length_fraction"]<-(cumsum(zone_attributes[,"length"])-
+                                         zone_attributes[,"length"])/groundwater_length           #this is the distance (as a fraction of the total groundwater reservoir) to the start of each zone
+zone_attributes[,"end_length_fraction"]<-cumsum(zone_attributes[,"length"])/groundwater_length         #this is the distance (as a fraction of the total groundwater reservoir) to the end of each zone
+GeneralEigenvalues["k_i",]       <-  ((2*col(GeneralEigenvalues)[1,]-1)*pi/2)^2*T_over_SL2
+
+GeneralEigenvalues["P_i",]        <-  cos((2*col(GeneralEigenvalues)[1,]-1)*
+                                            pi*WellDistance/groundwater_length/2)/Storativity
+
+GeneralEigenvalues["F_i",]        <- 2*(-1)^(col(GeneralEigenvalues)[1,]+1)/((2*col(GeneralEigenvalues)[1,]-1)*pi)  #note that this Bidwell 2011 F_i is different to Bidwell 2008 Fi
+
+eigenindex                       <-  slice.index(zone_eigenvalues,2)[,,1]                               #This is simply the index of the eigen values
+end_length_fraction_index        <-  zone_attributes[slice.index(zone_eigenvalues,1)[,,1],"end_length_fraction"]
+dim(end_length_fraction_index)   <-  dim(eigenindex)
+start_length_fraction_index      <-  zone_attributes[slice.index(zone_eigenvalues,1)[,,1],"start_length_fraction"]
+dim(start_length_fraction_index) <-  dim(eigenindex)
+
+zone_eigenvalues[,,"c_ij"]      <-  (4/(pi*(2*eigenindex-1)))*(sin((2*eigenindex-1)*
+                                      pi*end_length_fraction_index/2)-sin((2*eigenindex-1)*pi*start_length_fraction_index/2))
+
+#create the zone timeseries array and populate as much as possible
+
+#create recharge data file column headings
+ZoneNames                  <-  paste0("Z",seq(1:NumberOfZones))
+RechargeTypeNames         <-  c("dryland","irrigated","river","pumped")
+
+#build the column headings to be read from the input data
+data_headings<-c(t(outer(ZoneNames,RechargeTypeNames, paste,sep="_")))
+
+ZoneTimeseriesNames       <-  c("vadose_recharge","total_recharge")
+ZoneTimeseries             <-  array(0, dim=c(nrow(RechargeData),length(ZoneTimeseriesNames),NumberOfZones),
+                                      dimnames=list(rownames(RechargeData),ZoneTimeseriesNames,NULL))
+
+#ZoneTimeseries[,"river_recharge",]<- data.matrix(RechargeData[,(2*NumberOfZones):(3*NumberOfZones-1)])
+#ZoneTimeseries[,"pumped_removal",]<- data.matrix(RechargeData[,(3*NumberOfZones):(4*NumberOfZones-1)])
+ZoneTimeseries[,"vadose_recharge",]<-data.matrix(RechargeData[,3:(2+NumberOfZones)])
+
+#Calculate the total groundwater recharge
+ZoneTimeseries[,"total_recharge",]<-(ZoneTimeseries[,"vadose_recharge",])
+
+#create an array for catchment timeseries
+CatchmentTimeseriesNames  <-  c("observed_groundwater_depth","observed_groundwater_discharge","estimated_groundwater_depth","scenario_groundwater_depth","estimated_groundwater_discharge","scaled_est_discharge","scaled_est_discharge_less_SW_takes","scenario_groundwater_discharge")
+CatchmentTimeseries        <-  array(0, dim=c(nrow(RechargeData),length(CatchmentTimeseriesNames)),
+                                      dimnames=list(rownames(RechargeData),CatchmentTimeseriesNames))
+#smoothed_CatchmentTimeseries<-CatchmentTimeseries
+CatchmentTimeseries[,"observed_groundwater_depth"] <-  RechargeData[,"Observed.piezometric.head"]
+CatchmentTimeseries[,"observed_groundwater_discharge"] <-  RechargeData[,"Observed.discharge"]
+
+#create the array for the daily eigenvalue components of the predicted well depth
+EigenTimeseries            <-  array(0, dim=c(nrow(RechargeData),NumberEigenvalues,3),dimnames=list(RechargeData[,1],NULL,c("groundwater_storage","groundwater_level","groundwater_discharge")))
+
+#calculate the eigenvalue components of the predicted groundwater storage
+#for (i in 1:2) {             #used in debugging
+#for (i in 1:nrow(RechargeData)) {
+#  if (i==1) {
+#    PreviousEigenvalue<-rep(0,NumberEigenvalues)   #Initialise the "previous eigenvalues" to 0
+#  } else {
+#    PreviousEigenvalue<-EigenTimeseries[i-1,,"groundwater_storage"]            
+#  }      
+#  zone_recharge_by_c_ij             <- matrix(t(ZoneTimeseries[i,"total_recharge",]),nrow=NumberOfZones,ncol=NumberEigenvalues)*zone_eigenvalues[,,"c_ij"]
+#  total_recharge_by_c_ij          <-  apply(zone_recharge_by_c_ij,MARGIN=2,sum)
+#  EigenTimeseries[i,,"groundwater_storage"]            <-  PreviousEigenvalue*exp(-GeneralEigenvalues["k_i",])+total_recharge_by_c_ij*(1-exp(-GeneralEigenvalues["k_i",]))/GeneralEigenvalues["k_i",]
+#}
+
+#This function multiplies the recharge totals for each zone by their respective Cij parameter for each eigen component
+rechargeByCij <- function(totalRecharge = ZoneTimeseries[1,"total_recharge",],Eigenvalues=zone_eigenvalues[,,"c_ij"]){
+   NumberZones <- length(totalRecharge)
+   NumberEigens <- length(Eigenvalues[1,])
+   zone_recharge_by_c_ij             <- matrix(t(totalRecharge),nrow=NumberZones,ncol=NumberEigens)*Eigenvalues
+   rechargeByCij <- colSums(zone_recharge_by_c_ij)
+   return(rechargeByCij)
+}
+
+# apply the above function to each row of the recharge data
+#by turning each row into an element in a list
+totalRechargeByCijList <- split(ZoneTimeseries[,"total_recharge",],row(ZoneTimeseries[,"total_recharge",]))
+#then apply the function to each list
+totalRechargeByCij <- t(sapply(totalRechargeByCijList,rechargeByCij,Eigenvalues=zone_eigenvalues[,,"c_ij"]))  #note that I have transformed it back to have each row a different day
+
+# Divide these "Eigen" totals by the Eigenvalue.
+totalRechargeByCijByEigen <- sweep(totalRechargeByCij,MARGIN=2, GeneralEigenvalues["k_i",], FUN='/')
+
+#Which enables the use of the EMA function to calculate the daily eigentotals.
+#so I need, for each eigen component a list that has a list of the daily totalRechargeByCijByEigen values and the Eigenvalue (i.e. a list of lists)
+EigenList <- list()
+for (EigenNo in 1:(NumberEigenvalues)){
+  EigenList[[length(EigenList)+1]]<-list(series=totalRechargeByCijByEigen[,EigenNo],EigenValue=GeneralEigenvalues["k_i",EigenNo])
+}
+
+#And then actually apply the weighted averaging
+EigenTimeseriesEMA <- sapply(EigenList, function(x) EMA(x$series,n=1,ratio=1-exp(-1*x$EigenValue)))
+EigenTimeseries[,,"groundwater_storage"] <- EigenTimeseriesEMA
+
+#calculate the eigenvalue components of the predicted well depth
+EigenTimeseries[,,"groundwater_level"]            <-  EigenTimeseries[,,"groundwater_storage"] * rep(GeneralEigenvalues["P_i",],each=nrow(EigenTimeseries[,,"groundwater_storage"]))
+ 
+#if (i==1) {
+#    if (!is.na(CatchmentTimeseries[1,"observed_groundwater_depth"])){
+#      EigenTimeseries[i,1,"groundwater_level"]<-  CatchmentTimeseries[1,"observed_groundwater_depth"]}                           #Initial principal eigenvalues set to match observed depth if observed depth is available
+#}
+
+#calculate the eigenvalue components of the predicted groundwater discharge
+#for (i in 1:2) {             #used in debugging
+
+  EigenTimeseries[,,"groundwater_discharge"]            <-  EigenTimeseries[,,"groundwater_storage"] * rep(GeneralEigenvalues["F_i",]*GeneralEigenvalues["k_i",],each=nrow(EigenTimeseries[,,"groundwater_storage"]))
+#  if (i==1) {
+#    if (!is.na(CatchmentTimeseries[1,"observed_groundwater_discharge"])){
+#      EigenTimeseries[i,1,"groundwater_discharge"]<-  CatchmentTimeseries[1,"observed_groundwater_discharge"]}                           #Initial principal eigenvalues set to match observed flow if observed is available
+#}
+
+#Sum the eigenvalues to give the estimated groundwater depth
+CatchmentTimeseries[,"estimated_groundwater_depth"]   <-  apply(EigenTimeseries[,,"groundwater_level"],MARGIN=1,sum)
+if (!is.na(CatchmentTimeseries[1,"observed_groundwater_depth"])){
+  CatchmentTimeseries[1,"estimated_groundwater_depth"]    <-  CatchmentTimeseries[1,"observed_groundwater_depth"]    #Initial estimated set to match observed depth
+}
+
+#Sum the eigenvalues to give the estimated groundwater discharge
+CatchmentTimeseries[,"estimated_groundwater_discharge"]   <-  apply(EigenTimeseries[,,"groundwater_discharge"],MARGIN=1,sum)
+if (!is.na(CatchmentTimeseries[1,"observed_groundwater_discharge"])){
+  CatchmentTimeseries[1,"estimated_groundwater_discharge"]    <-  CatchmentTimeseries[1,"observed_groundwater_discharge"]    #Initial estimated set to match observed depth
+}
+CatchmentTimeseries[,"scaled_est_discharge"] <- CatchmentTimeseries[,"estimated_groundwater_discharge"] * DischargeScaleFactor
+
+#Convert to a zoo data type
+CatchmentTimeseries <- as.zoo(CatchmentTimeseries,as.Date(row.names(CatchmentTimeseries),format="%d/%m/%Y"))
+} #end of function
+
+bouss.plot <- function(timeseries) {
+  library(hydroGOF)
+  observed   <- timeseries[,2]
+  estimated  <- timeseries[,6]
+  
+  ggof(estimated,observed,lwd=c(1.5,1.5),pch=c(".","."),lty=c(1,1),col=c("red","black"))
+  
+}
+
+#############################################
+# Bonus plot that also plots a 30 day moving average
+#Create moving average to enable nicer plots
+#
+# from http://www.cookbook-r.com/Manipulating_data/Calculating_a_moving_average/
+############################################
+
+bouss.plot2 <- function(timeseries) {
+
+  filter_31day<- rep(1/31,31)
+  smoothed_catchment_timeseries<-timeseries   #start with just the timeseries
+  for (series in colnames(timeseries)){
+    smoothed_catchment_timeseries[,series]<-filter(timeseries[,series],filter_31day, sides=2)
+  }
+  
+  #Plot the graphs
+  #ground water level
+  min_level                   <-floor(min(timeseries[,c("estimated_groundwater_depth","observed_groundwater_depth")],na.rm=TRUE))
+  max_level                   <-ceiling(max(timeseries[,c("estimated_groundwater_depth","observed_groundwater_depth")],na.rm=TRUE))
+  plot(timeseries[,"observed_groundwater_depth"],type="l",
+       ylab="",xlab="",bty="n",ylim=c(min_level,max_level),xlim=c(as.Date("1990-01-01"),as.Date("2012-12-31")))
+  lines(timeseries[,"estimated_groundwater_depth"],type="l",lty=1,col="red")
+  title(main=paste("Modeled groundwater discharge",ylab="Groundwater level (m)"))
+  legend("topright",c("Observed","Estimated"),col=c("black","red"),lty=c(NA,1),pch=c(1,NA),bty="n")
+  
+  
+  #ground water discharge
+  par(mar=c(4,5,5,4))
+  min_level                   <-floor(min(smoothed_catchment_timeseries[,c("scaled_est_discharge","observed_groundwater_discharge")],na.rm=TRUE))
+  max_level                   <-ceiling(max(smoothed_catchment_timeseries[,c("scaled_est_discharge","observed_groundwater_discharge")],na.rm=TRUE))
+  
+  min_date                    <-as.Date("1984-04-01")
+  max_date                    <-as.Date("2014-04-01")
+  plot(timeseries[,"observed_groundwater_discharge"],type="l",lwd=3,col="gray",
+       ylab="",xlab="",bty="n",ylim=c(min_level,max_level),xlim=c(min_date,max_date))
+  lines(smoothed_catchment_timeseries[,"observed_groundwater_discharge"],type="l",lty=1,lwd=3,col="black")
+  
+  lines(timeseries[,"scaled_est_discharge"],type="l",lty=1,lwd=3,col="pink")
+  
+  lines(smoothed_catchment_timeseries[,"scaled_est_discharge"],type="l",lty=1,lwd=3,col="red")
+  title(main="Modeled groundwater discharge",ylab=expression(Discharge~(m^{3}~s^{-1})))
+  legend("topright",c("Observed","Observed 30 day running mean","Estimated","Estimated 30 day running mean"),col=c("gray","black","pink","red"),lty=c(1,1,1,1),lwd=c(3,3,3,3),bty="n")
+  
+}
