@@ -7,6 +7,15 @@
 #This is all taken from Bidwell and Burbery 2011 Groundwater Data Analysis - quantifying aquifer dynamics Lincoln Ventures Report No 4110/1
 
 # Check that the input values make sense
+#Some values that work
+#Fish Creek
+#fishrecharge<-vadose.recharge(ZoneStorageTime=c(4,3,3,3),AquiferZoneDryFractions = list(c(0.8,0.8,0.8,0.8),c(0,0,0,0),c(0,0,0.193,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(1,1,0.96,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
+#PupuMainSpringRecharge<-vadose.recharge(ZoneStorageTime=c(3,2,2,2),AquiferZoneDryFractions = list(c(1,1,1,1),c(0,0,0,0),c(0,0,0.143,0)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.0)),RiverRechargeFractions=c(1,1,0.96,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
+#SpringRiverRecharge<-vadose.recharge(ZoneStorageTime=c(4,3,3,0.7),AquiferZoneDryFractions = list(c(1,1,1,1),c(0,0,0,0),c(0,0,0.193,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(0,0,1,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
+#MotupipiRecharge<-vadose.recharge(ZoneStorageTime=c(1,0,0,0),AquiferZoneDryFractions = list(c(0,0,0,0),c(0,0,1,1),c(0,0,0.08,0.36)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(0,0,0.1,0.1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
+#PaynesFordRecharge<-vadose.recharge(ZoneStorageTime=c(0,0,0,0),AquiferZoneDryFractions = list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.033,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0.0602,0.0069,0.1737)),RiverRechargeFractions=c(0,1,0.96,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
+
+
 
 vadose.recharge <- function(ZoneStorageTime = c(30,30,30,20),
                             AquiferZoneDryFractions = list(c(0.3,0.3,0.3,0.3),
@@ -16,7 +25,8 @@ vadose.recharge <- function(ZoneStorageTime = c(30,30,30,20),
                                                               c(0,0,0,0),
                                                               c(0.009,0.0602,0.0069,0.1737)),
                             RiverRechargeFractions = c(0,0,0,0),
-                            RechargeFileName ="Fishcreek recharge dataV2.csv")
+                            RechargeFileName ="GoldenBayLandSurfaceRechargeData.csv",
+                            PumpingFileName = "GoldenBayGWPumpingData.csv")  
 
 #***************************************************************
 #  **************Description of the input paramaters***********
@@ -35,6 +45,8 @@ vadose.recharge <- function(ZoneStorageTime = c(30,30,30,20),
 #                          c(AquifernZone1Irrig,AquifernZone2Irrig,AquifernZone3Irrig,AquifernZonemIrrig))
 #
 # Recharge filename is a csv file of the land surface recharge data combined with observed data, riverflow and pump data
+# Pumping filename is a csv file of the pumping data, one series per aquifer per zone, ordered as Z1A1, Z1A2..Z1An,Z2A1,Z2A2..Z2An..ZnA1,ZnA2...ZnAn
+# Primary aquifer. This provides the aquifer number that is primarily being modelled. This may be removed in the future but is needed to cope for the current applications where multiple aquifer recharge regions are taken from a single zone, so it is not always possible to tell which aquifer is being modelled, so you can't tell which pumping time series is to be used.
 # First column is date,Observed piezometric head,Observed discharge,
 #             Zone1Aquifer1dryland,Zone1Aquifer1irrigated,Zone1Aquifer2Dryland,Zone1Aquifer2Irrigated,...,Zone1AquifernDryland,Zone1Aquifernirrigated,
 #             Z2A1Dry,Z2A1Irr,Z2A2Dry,Z2A2Irr,...,Z2AnDry,Z2AnIrr,
@@ -51,6 +63,7 @@ library(TTR)          #This library includes the EMA exponentially weighted movi
 
 #read in the data
 ZoneTimeseries        <-  read.csv(RechargeFileName)                              #this is the daily timeseries of observed discharge and groundwater level, vadose recharge for each zone, river recharge to groundwater and groundwater pumping in mm
+PumpingTimeseries     <-  read.csv(PumpingFileName)                               #This is the daily timeseries of pumping for each aquifer in each zone. Same date range as the Recharge data.
 
 #Calculate the number of zones and aquifers based on the 
 NumberOfZones         <- length(AquiferZoneDryFractions[[1]])
@@ -59,13 +72,14 @@ NumberOfAquifers      <- length(AquiferZoneDryFractions)
 #Multiply the aquifer recharge fractions by the recharge timeseries to calculate a total recharge for each zone
 ZoneFractions  <- c()                                               #Initialise ZoneFractions to an empty set
 for (ZoneNo in 1:NumberOfZones){
+  
   for (AquiferNo in 1:NumberOfAquifers){
     ZoneFractions <- c(ZoneFractions,AquiferZoneDryFractions[[AquiferNo]][ZoneNo],AquiferZoneIrrigFractions[[AquiferNo]][ZoneNo])
   }
 }
 
 #Multiply the recharge timeseries by their respective fractions
-ZoneSurfaceRecharge  <- sweep(ZoneTimeseries[4:(ncol(ZoneTimeseries)-2*NumberOfZones)],MARGIN=2,ZoneFractions,'*')
+ZoneSurfaceRecharge  <- sweep(ZoneTimeseries[2:(ncol(ZoneTimeseries)-2*NumberOfZones)],MARGIN=2,ZoneFractions,'*')
 ZoneRiverRecharge <- sweep(ZoneTimeseries[(ncol(ZoneTimeseries)-2*NumberOfZones+1):(ncol(ZoneTimeseries)-NumberOfZones)],MARGIN=2,RiverRechargeFractions,'*')
 
 #Get the sums for each zone so that we are left with just one timeseries for each zone
@@ -74,8 +88,10 @@ for (ZoneNo in 1:(NumberOfZones)){
   ZoneSurfaceRechargeTotals <- cbind(ZoneSurfaceRechargeTotals,rowSums(ZoneSurfaceRecharge[,c(((ZoneNo-1)*(2*NumberOfAquifers)+1):(ZoneNo*2*NumberOfAquifers))]))
 }
 
-#Add in the river recharge
-ZoneRechargeTotals <- ZoneSurfaceRechargeTotals + ZoneRiverRecharge
+#Uncomment below and comment out the line below below if the river recharge is to have a delay into the vadose zone
+##Add in the river recharge
+#ZoneRechargeTotals <- ZoneSurfaceRechargeTotals + ZoneRiverRecharge
+ZoneRechargeTotals <- ZoneSurfaceRechargeTotals
 
 #build a list of lists of the recharge data with the weighting time constant, needed to apply the exp weighted moving average
 RechargeList <- list()
@@ -85,18 +101,38 @@ for (ZoneNo in 1:(NumberOfZones)){
 
 #Apply the exponential weighted moving average
 ZoneVadoseRecharge <- sapply(RechargeList, function(x) EMA(x$series,n=1,ratio=1-exp(-1/max(x$timeConstant,0.000001))))
-                          
+names(ZoneVadoseRecharge) <- paste0("VadoseZ",seq(1,length.out=NumberOfZones))
+
+#This recharge is for when the stream is directly connected to the groundwater, so no delay.
+#Add in the river recharge
+ZoneVadoseRecharge <- ZoneVadoseRecharge + ZoneRiverRecharge
+
 #Take out any pumping
-ZoneVadoseRecharge <- ZoneVadoseRecharge - ZoneTimeseries[,(4+NumberOfZones*(2*NumberOfAquifers+1)):(3+NumberOfZones*(2*NumberOfAquifers+2))] 
+#Somehow get the proportions of each aquifer for each zone for pumping.
+#Add together the dry land and irrigated land fractions to get aquifer fractions
+#Use these aquifer fractions to get total pumping
+AquiferFractions <- sapply(as.matrix(AquiferZoneDryFractions), unlist) + sapply(as.matrix(AquiferZoneIrrigFractions),unlist)
+
+PumpingScaled <- sweep(PumpingTimeseries[,2:ncol(PumpingTimeseries)],MARGIN=2, as.vector(t(AquiferFractions)),'*')
+#Now I need to add together the aquifers
+PumpingTotals    <- c()     #Initialise
+for (ZoneNo in 1:(NumberOfZones)){
+  PumpingTotals <- cbind(PumpingTotals,rowSums(PumpingScaled[,c(((ZoneNo-1)*(NumberOfAquifers)+1):(ZoneNo*NumberOfAquifers))]))
+}
+
+ZoneVadoseRecharge <- ZoneVadoseRecharge - PumpingTotals
 
 #Convert from millimetres to metres
 ZoneVadoseRecharge<- ZoneVadoseRecharge / 1000
 
 #Put the dates back on
-rownames(ZoneVadoseRecharge) <- ZoneTimeseries[,1]  
+rownames(ZoneVadoseRecharge) <- ZoneTimeseries[,1]
+
+#Rename the columns
+colnames(ZoneVadoseRecharge) <- paste0("Zone",c(1:NumberOfZones))
 
 #Put the observed data back on
-ZoneVadoseRecharge <- cbind(ZoneTimeseries[,2:3],ZoneVadoseRecharge) 
+#ZoneVadoseRecharge <- cbind(ZoneTimeseries[,2:3],ZoneVadoseRecharge) 
 
 return(ZoneVadoseRecharge)
 } #End of function

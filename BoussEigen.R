@@ -19,31 +19,36 @@
 
 #**********************************
 # To-do list
-# Ideally the recharge data originates from surface water inputs (irrigation and rain and higher aquifers)
-#This needs a new function to be written
+# 
 #
+#
+# An example call
 
-#bouss.eigen <- function(WellDistance=65340,Storativity=0.0075,Transmisivity=65340000,
+#fishDischarge <- bouss.eigen(WellDistance=66000,ZoneLengths=c(35600,5700,8900,15800),Storativity=0.01,Transmisivity=313632,DischargeScaleFactor=950,RechargeData=fishrecharge,GWBypassFlow=1)
+
+
+
 bouss.eigen <- function(WellDistance=65340,Storativity=0.0075,Transmisivity=71940000,
                         ZoneLengths=c(35600,5700,8900,15800),DischargeScaleFactor=500,
-                        RechargeData=ZoneVadoseRecharge)
-#                        RechargeFileName="Vadose_Recharge_data.csv")
+                        RechargeData=ZoneVadoseRecharge,GWBypassFlow=1,InitialEigenState=0)
+#*****************************************
+  #Description of arguments:
+  #WellDistance               #distance the well is from the upper edge of the groundwater zone in metres
+  #Storativity                #the groundwater storativity, i.e. the fraction of space in the groundwater that is available for water
+  #Transmisivity              #the two dimensional flow rate of water through the groundwater m2 per day
+  #ZoneLengths                #the lengths (in metres) of each of the zones
+  #DischargeScaleFactor       #discharge to groundwater level response gain factor
+  #RechargeFileName           #The csv file with all the data in it. This is the daily timeseries of observed discharge and groundwater level, vadose recharge for each zone, river recharge to groundwater and groundwater pumping in mm
+  #GWBypassFlow               #The amount of discharge that "slips by" the flow recorder, effectively an offset. It could also be considered to be related to the initial depth to the GW, so it can be a negative number. Ideally calibrate for this using the mean error.                                       
+#*******************************************
 {
 #Load specific libraries
 library(hydroTSM) #this is used to generate the flow duration curve from the discharge timeseries
 library(TTR)      #this provides the MovingAverage functions (in particular SMA, Simple Moving Average and EMA exponential weighted moving average)
 
-#Fish Creek Values
-#WellDistance               <-  65340                                                              #distance the well is from the upper edge of the groundwater zone in metres
-#Storativity                 <-  0.0075                                                             #the groundwater storativity, i.e. the fraction of space in the groundwater that is available for water
-#Transmisivity               <-  65340000                                                           #the two dimensional flow rate of water through the groundwater m2 per day
-#ZoneLengths                <-  c(35600,5700,8900,15800)
-#DischargeScaleFactor      <-  500                                                               #discharge to groundwater level response gain factor
-#RechargeFileName            <-  "Vadose_Recharge_data.csv"
 
 NumberEigenvalues          <-  66                                                                #The greater the number the greater the convergence to a true Boussinesq estimate. Cost is time and memeory
 
-#RechargeData               <-  read.csv(RechargeFileName)                              #this is the daily timeseries of observed discharge and groundwater level, vadose recharge for each zone, river recharge to groundwater and groundwater pumping in mm
 NumberOfZones               <-  length(ZoneLengths)
 Zone_attribute_names        <-  c("length","recharge_factors","river_recharge","start_length_fraction","end_length_fraction")  #the length fractions refers to the length, as a fraction of the the total groundwater length, where the individual zones start and finish
 zone_attributes             <-  array(0, dim=c(NumberOfZones,length(Zone_attribute_names)),
@@ -98,34 +103,18 @@ ZoneTimeseries             <-  array(0, dim=c(nrow(RechargeData),length(ZoneTime
 
 #ZoneTimeseries[,"river_recharge",]<- data.matrix(RechargeData[,(2*NumberOfZones):(3*NumberOfZones-1)])
 #ZoneTimeseries[,"pumped_removal",]<- data.matrix(RechargeData[,(3*NumberOfZones):(4*NumberOfZones-1)])
-ZoneTimeseries[,"vadose_recharge",]<-data.matrix(RechargeData[,3:(2+NumberOfZones)])
+ZoneTimeseries[,"vadose_recharge",]<-data.matrix(RechargeData[,1:(NumberOfZones)])
 
 #Calculate the total groundwater recharge
 ZoneTimeseries[,"total_recharge",]<-(ZoneTimeseries[,"vadose_recharge",])
 
 #create an array for catchment timeseries
-CatchmentTimeseriesNames  <-  c("observed_groundwater_depth","observed_groundwater_discharge","estimated_groundwater_depth","scenario_groundwater_depth","estimated_groundwater_discharge","scaled_est_discharge","scaled_est_discharge_less_SW_takes","scenario_groundwater_discharge")
+CatchmentTimeseriesNames  <-  c("estimated_groundwater_depth","scenario_groundwater_depth","estimated_groundwater_discharge","scaled_est_discharge","scaled_est_discharge_less_SW_takes","scenario_groundwater_discharge")
 CatchmentTimeseries        <-  array(0, dim=c(nrow(RechargeData),length(CatchmentTimeseriesNames)),
                                       dimnames=list(rownames(RechargeData),CatchmentTimeseriesNames))
-#smoothed_CatchmentTimeseries<-CatchmentTimeseries
-CatchmentTimeseries[,"observed_groundwater_depth"] <-  RechargeData[,"Observed.piezometric.head"]
-CatchmentTimeseries[,"observed_groundwater_discharge"] <-  RechargeData[,"Observed.discharge"]
 
 #create the array for the daily eigenvalue components of the predicted well depth
-EigenTimeseries            <-  array(0, dim=c(nrow(RechargeData),NumberEigenvalues,3),dimnames=list(RechargeData[,1],NULL,c("groundwater_storage","groundwater_level","groundwater_discharge")))
-
-#calculate the eigenvalue components of the predicted groundwater storage
-#for (i in 1:2) {             #used in debugging
-#for (i in 1:nrow(RechargeData)) {
-#  if (i==1) {
-#    PreviousEigenvalue<-rep(0,NumberEigenvalues)   #Initialise the "previous eigenvalues" to 0
-#  } else {
-#    PreviousEigenvalue<-EigenTimeseries[i-1,,"groundwater_storage"]            
-#  }      
-#  zone_recharge_by_c_ij             <- matrix(t(ZoneTimeseries[i,"total_recharge",]),nrow=NumberOfZones,ncol=NumberEigenvalues)*zone_eigenvalues[,,"c_ij"]
-#  total_recharge_by_c_ij          <-  apply(zone_recharge_by_c_ij,MARGIN=2,sum)
-#  EigenTimeseries[i,,"groundwater_storage"]            <-  PreviousEigenvalue*exp(-GeneralEigenvalues["k_i",])+total_recharge_by_c_ij*(1-exp(-GeneralEigenvalues["k_i",]))/GeneralEigenvalues["k_i",]
-#}
+EigenTimeseries            <-  array(0, dim=c(nrow(RechargeData),NumberEigenvalues,3),dimnames=list(rownames(RechargeData),NULL,c("groundwater_storage","groundwater_level","groundwater_discharge")))
 
 #This function multiplies the recharge totals for each zone by their respective Cij parameter for each eigen component
 rechargeByCij <- function(totalRecharge = ZoneTimeseries[1,"total_recharge",],Eigenvalues=zone_eigenvalues[,,"c_ij"]){
@@ -145,6 +134,9 @@ totalRechargeByCij <- t(sapply(totalRechargeByCijList,rechargeByCij,Eigenvalues=
 # Divide these "Eigen" totals by the Eigenvalue.
 totalRechargeByCijByEigen <- sweep(totalRechargeByCij,MARGIN=2, GeneralEigenvalues["k_i",], FUN='/')
 
+# Set the first value according to the input argument (this is just helps to reduce the spin-up time)
+totalRechargeByCijByEigen[1,1] <- InitialEigenState
+
 #Which enables the use of the EMA function to calculate the daily eigentotals.
 #so I need, for each eigen component a list that has a list of the daily totalRechargeByCijByEigen values and the Eigenvalue (i.e. a list of lists)
 EigenList <- list()
@@ -158,7 +150,10 @@ EigenTimeseries[,,"groundwater_storage"] <- EigenTimeseriesEMA
 
 #calculate the eigenvalue components of the predicted well depth
 EigenTimeseries[,,"groundwater_level"]            <-  EigenTimeseries[,,"groundwater_storage"] * rep(GeneralEigenvalues["P_i",],each=nrow(EigenTimeseries[,,"groundwater_storage"]))
- 
+
+#I think the following line is equivalent
+#EigenTimeseries[,,"groundwater_level"]            <-  EigenTimeseries[,,"groundwater_storage"] *t(replicate(nrow(EigenTimeseries[,,"groundwater_storage"]),GeneralEigenvalues["P_i",]))
+
 #if (i==1) {
 #    if (!is.na(CatchmentTimeseries[1,"observed_groundwater_depth"])){
 #      EigenTimeseries[i,1,"groundwater_level"]<-  CatchmentTimeseries[1,"observed_groundwater_depth"]}                           #Initial principal eigenvalues set to match observed depth if observed depth is available
@@ -175,71 +170,43 @@ EigenTimeseries[,,"groundwater_level"]            <-  EigenTimeseries[,,"groundw
 
 #Sum the eigenvalues to give the estimated groundwater depth
 CatchmentTimeseries[,"estimated_groundwater_depth"]   <-  apply(EigenTimeseries[,,"groundwater_level"],MARGIN=1,sum)
-if (!is.na(CatchmentTimeseries[1,"observed_groundwater_depth"])){
-  CatchmentTimeseries[1,"estimated_groundwater_depth"]    <-  CatchmentTimeseries[1,"observed_groundwater_depth"]    #Initial estimated set to match observed depth
-}
+#if (!is.na(CatchmentTimeseries[1,"observed_groundwater_depth"])){
+#  CatchmentTimeseries[1,"estimated_groundwater_depth"]    <-  CatchmentTimeseries[1,"observed_groundwater_depth"]    #Initial estimated set to match observed depth
+#}
 
 #Sum the eigenvalues to give the estimated groundwater discharge
 CatchmentTimeseries[,"estimated_groundwater_discharge"]   <-  apply(EigenTimeseries[,,"groundwater_discharge"],MARGIN=1,sum)
-if (!is.na(CatchmentTimeseries[1,"observed_groundwater_discharge"])){
-  CatchmentTimeseries[1,"estimated_groundwater_discharge"]    <-  CatchmentTimeseries[1,"observed_groundwater_discharge"]    #Initial estimated set to match observed depth
-}
+#if (!is.na(CatchmentTimeseries[1,"observed_groundwater_discharge"])){
+#  CatchmentTimeseries[1,"estimated_groundwater_discharge"]    <-  CatchmentTimeseries[1,"observed_groundwater_discharge"]    #Initial estimated set to match observed depth
+#}
 CatchmentTimeseries[,"scaled_est_discharge"] <- CatchmentTimeseries[,"estimated_groundwater_discharge"] * DischargeScaleFactor
+
+#Add an offset
+CatchmentTimeseries[,"scaled_est_discharge"] <- pmax(CatchmentTimeseries[,"scaled_est_discharge"] - GWBypassFlow,0)
+
 
 #Convert to a zoo data type
 CatchmentTimeseries <- as.zoo(CatchmentTimeseries,as.Date(row.names(CatchmentTimeseries),format="%d/%m/%Y"))
 } #end of function
 
-bouss.plot <- function(timeseries) {
+
+
+#The following are useful for Takaka observed data
+#Observed <- read.csv("Observeddata.csv")
+#ObservedZoo <- read.zoo(Observeddata,format="%d/%m/%Y")
+#The observed data are then individual columns of ObserveddataZoo
+#The estimated discharge is the 4th column of the discharge zoo
+#An example of calling the following is:
+#bouss.plot(PupuMainSpringdischarge[,4],ObserveddataZoo[,2])
+#or for a select part of the series, subset them first using window, e.g.
+#bouss.plot(PupuMainSpringdischarge[,4],ObserveddataZoo[,2]),start="1980-01-01",end="1980-01-06")
+bouss.plot <- function(EstimatedTimeseries,ObservedTimeseries,startDate=NULL,endDate=NULL) {
   library(hydroGOF)
-  observed   <- timeseries[,2]
-  estimated  <- timeseries[,6]
   
-  ggof(estimated,observed,lwd=c(1.5,1.5),pch=c(".","."),lty=c(1,1),col=c("red","black"))
-  
-}
-
-#############################################
-# Bonus plot that also plots a 30 day moving average
-#Create moving average to enable nicer plots
-#
-# from http://www.cookbook-r.com/Manipulating_data/Calculating_a_moving_average/
-############################################
-
-bouss.plot2 <- function(timeseries) {
-
-  filter_31day<- rep(1/31,31)
-  smoothed_catchment_timeseries<-timeseries   #start with just the timeseries
-  for (series in colnames(timeseries)){
-    smoothed_catchment_timeseries[,series]<-filter(timeseries[,series],filter_31day, sides=2)
-  }
-  
-  #Plot the graphs
-  #ground water level
-  min_level                   <-floor(min(timeseries[,c("estimated_groundwater_depth","observed_groundwater_depth")],na.rm=TRUE))
-  max_level                   <-ceiling(max(timeseries[,c("estimated_groundwater_depth","observed_groundwater_depth")],na.rm=TRUE))
-  plot(timeseries[,"observed_groundwater_depth"],type="l",
-       ylab="",xlab="",bty="n",ylim=c(min_level,max_level),xlim=c(as.Date("1990-01-01"),as.Date("2012-12-31")))
-  lines(timeseries[,"estimated_groundwater_depth"],type="l",lty=1,col="red")
-  title(main=paste("Modeled groundwater discharge",ylab="Groundwater level (m)"))
-  legend("topright",c("Observed","Estimated"),col=c("black","red"),lty=c(NA,1),pch=c(1,NA),bty="n")
-  
-  
-  #ground water discharge
-  par(mar=c(4,5,5,4))
-  min_level                   <-floor(min(smoothed_catchment_timeseries[,c("scaled_est_discharge","observed_groundwater_discharge")],na.rm=TRUE))
-  max_level                   <-ceiling(max(smoothed_catchment_timeseries[,c("scaled_est_discharge","observed_groundwater_discharge")],na.rm=TRUE))
-  
-  min_date                    <-as.Date("1984-04-01")
-  max_date                    <-as.Date("2014-04-01")
-  plot(timeseries[,"observed_groundwater_discharge"],type="l",lwd=3,col="gray",
-       ylab="",xlab="",bty="n",ylim=c(min_level,max_level),xlim=c(min_date,max_date))
-  lines(smoothed_catchment_timeseries[,"observed_groundwater_discharge"],type="l",lty=1,lwd=3,col="black")
-  
-  lines(timeseries[,"scaled_est_discharge"],type="l",lty=1,lwd=3,col="pink")
-  
-  lines(smoothed_catchment_timeseries[,"scaled_est_discharge"],type="l",lty=1,lwd=3,col="red")
-  title(main="Modeled groundwater discharge",ylab=expression(Discharge~(m^{3}~s^{-1})))
-  legend("topright",c("Observed","Observed 30 day running mean","Estimated","Estimated 30 day running mean"),col=c("gray","black","pink","red"),lty=c(1,1,1,1),lwd=c(3,3,3,3),bty="n")
+#  observed   <- timeseries[,4]
+#  estimated  <- timeseries[,4]
+  Estimated <- window(EstimatedTimeseries,start=startDate,end=endDate)
+  Observed <- window(ObservedTimeseries,start=startDate,end=endDate)
+  ggof(Estimated,Observed,lwd=c(1.5,1.5),pch=c(".","."),lty=c(1,1),col=c("red","black"))
   
 }
