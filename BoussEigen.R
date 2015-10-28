@@ -28,6 +28,7 @@ bouss.eigen <- function(WellDistance=65340,Storativity=0.0075,Transmisivity=7194
                         ZoneLengths=c(35600,5700,8900,15800),DischargeScaleFactor=500,
                         RechargeData=ZoneVadoseRecharge)
 #                        RechargeFileName="Vadose_Recharge_data.csv")
+  # This is just for a test
 {
 #Load specific libraries
 library(hydroTSM) #this is used to generate the flow duration curve from the discharge timeseries
