@@ -1,20 +1,23 @@
-
-#Vadose recharge time series generator.
-# This function reads in a timeseries of surface recharge for zones in a catchment and estimates the timeseries of vadose recharge.
+#' A Vadose recharge time series generator.
+#'
+#'This function reads in a timeseries of surface recharge for zones in a catchment and estimates the timeseries of vadose recharge.
 # Each zone has recharge for dryland, irrigated land and from the river.
 # The dryland and irrigated land can be recharging to different aquifers which contribute different amounts to the groundwater that is being modelled.
 # The vadose recharge is assumed to be well estimated by an exponential weighted moving average.
-#This is all taken from Bidwell and Burbery 2011 Groundwater Data Analysis - quantifying aquifer dynamics Lincoln Ventures Report No 4110/1
-
-# Check that the input values make sense
-#Some values that work
-#Fish Creek
-#fishrecharge<-vadose.recharge(ZoneStorageTime=c(4,3,3,3),AquiferZoneDryFractions = list(c(0.8,0.8,0.8,0.8),c(0,0,0,0),c(0,0,0.193,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(1,1,0.96,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
-#PupuMainSpringRecharge<-vadose.recharge(ZoneStorageTime=c(3,2,2,2),AquiferZoneDryFractions = list(c(1,1,1,1),c(0,0,0,0),c(0,0,0.143,0)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.0)),RiverRechargeFractions=c(1,1,0.96,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
-#SpringRiverRecharge<-vadose.recharge(ZoneStorageTime=c(4,3,3,0.7),AquiferZoneDryFractions = list(c(1,1,1,1),c(0,0,0,0),c(0,0,0.193,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(0,0,1,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
-#MotupipiRecharge<-vadose.recharge(ZoneStorageTime=c(1,0,0,0),AquiferZoneDryFractions = list(c(0,0,0,0),c(0,0,1,1),c(0,0,0.08,0.36)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(0,0,0.1,0.1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
-#PaynesFordRecharge<-vadose.recharge(ZoneStorageTime=c(0,0,0,0),AquiferZoneDryFractions = list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.033,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0.0602,0.0069,0.1737)),RiverRechargeFractions=c(0,1,0.96,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
-
+#'Equations are from:
+#' Bidwell, V., Burbery, L., 2011. Groundwater Data Analysis - quantifying aquifer dynamics. Prepared for Envirolink Project 420-NRLC50 (No. 4110/1). Lincoln Ventures Ltd.
+#' which in turn cites the following, though note that the symbol labels are different.
+#' Bidwell, V.J., Stenger, R., Barkle, G.F., 2008. Dynamic analysis of groundwater discharge and partial-area contribution to Pukemanga Stream, New Zealand. Hydrol. Earth Syst. Sci. 12, 975-987. doi:10.5194/hess-12-975-2008
+#' @param ZoneStorageTime The time (in days) that it takes for water to get through the vadose zone into the groundwater, one value for each zone.
+#' @param AquiferZoneDryFractions a list of vectors of the proportion of each aquifer's dryland recharge that is contributing to each zones vadose recharge
+#' @param AquiferZoneIrrigFractions a list of vectors of the proportion of each aquifer's irrigation recharge that is contributing to each zones vadose recharge
+#' @param RiverRechargeFractions The fraction of the river discahrge that contributes to the groundwater for each zone.  
+#' @param RechargeFilename The csv file with all the data in it. This is the daily timeseries of vadose recharge for each zone, and river recharge in mm
+#' @param PumpingFileName The csv file with the pumping data in it. In mm. One series per aquifer per zone, ordered as Z1A1, Z1A2..Z1An,Z2A1,Z2A2..Z2An..ZnA1,ZnA2...ZnAn
+#' @keywords groundwater, hydrology
+#' @export
+#' @examples
+#' fishRecharge<-vadose.recharge(ZoneStorageTime=c(4,3,3,3),AquiferZoneDryFractions = list(c(0.8,0.8,0.8,0.8),c(0,0,0,0),c(0,0,0.193,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(1,1,0.958,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
 
 
 vadose.recharge <- function(ZoneStorageTime = c(30,30,30,20),
@@ -27,34 +30,6 @@ vadose.recharge <- function(ZoneStorageTime = c(30,30,30,20),
                             RiverRechargeFractions = c(0,0,0,0),
                             RechargeFileName ="GoldenBayLandSurfaceRechargeData.csv",
                             PumpingFileName = "GoldenBayGWPumpingData.csv")  
-
-#***************************************************************
-#  **************Description of the input paramaters***********
-#ZoneStorageTime is a vector of times (in days)for each zone for how long it takes for the water to pass through the vadose zone
-#
-#AquiferZoneDryFractions is a list of vectors of the proportion of each aquifer's dryland recharge that is contributing to each zones vadose recharge
-#AquiferZoneDryFractions <- list(c(Aquifer1Zone1Dry,Aquifer1Zone2Dry,...,Aquifer1ZonemDry),
-#                          c(Aquifer2Zone1Dry,Aquifer2Zone2Dry,...,Aquifer2ZonemDry),
-#                           ...
-#                          c(AquifernZone1Dry,AquifernZone2Dry,AquifernZone3Dry,AquifernZonemDry))
-#
-#AquiferZoneDryFractions is a list of vectors of the proportion of each aquifer's irrigation recharge that is contributing to each zones vadose recharge
-#AquiferZoneIrrigFractions <- list(c(Aquifer1Zone1Irrig,Aquifer1Zone2Irrig,...,Aquifer1ZonemIrrig),
-#                          c(Aquifer2Zone1Irrig,Aquifer2Zone2Irrig,...,Aquifer2ZonemIrrig),
-#                           ...
-#                          c(AquifernZone1Irrig,AquifernZone2Irrig,AquifernZone3Irrig,AquifernZonemIrrig))
-#
-# Recharge filename is a csv file of the land surface recharge data combined with observed data, riverflow and pump data
-# Pumping filename is a csv file of the pumping data, one series per aquifer per zone, ordered as Z1A1, Z1A2..Z1An,Z2A1,Z2A2..Z2An..ZnA1,ZnA2...ZnAn
-# Primary aquifer. This provides the aquifer number that is primarily being modelled. This may be removed in the future but is needed to cope for the current applications where multiple aquifer recharge regions are taken from a single zone, so it is not always possible to tell which aquifer is being modelled, so you can't tell which pumping time series is to be used.
-# First column is date,Observed piezometric head,Observed discharge,
-#             Zone1Aquifer1dryland,Zone1Aquifer1irrigated,Zone1Aquifer2Dryland,Zone1Aquifer2Irrigated,...,Zone1AquifernDryland,Zone1Aquifernirrigated,
-#             Z2A1Dry,Z2A1Irr,Z2A2Dry,Z2A2Irr,...,Z2AnDry,Z2AnIrr,
-#             ....
-#             ZnA1Dry,ZnA1Irr,ZnA2Dry,ZnA2Irr,...,ZnAnDry,ZnAnIrr,
-#             Z1River,Z2River,...,ZnRiver,
-#             Z1Pumped,Z2Pumped,...,ZnPumped
-#********************************************************************
   
 {  #Start of the function
   
