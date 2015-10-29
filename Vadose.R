@@ -83,7 +83,7 @@ names(ZoneVadoseRecharge) <- paste0("VadoseZ",seq(1,length.out=NumberOfZones))
 ZoneVadoseRecharge <- ZoneVadoseRecharge + ZoneRiverRecharge
 
 #Take out any pumping
-#Somehow get the proportions of each aquifer for each zone for pumping.
+#get the proportions of each aquifer for each zone for pumping.
 #Add together the dry land and irrigated land fractions to get aquifer fractions
 #Use these aquifer fractions to get total pumping
 AquiferFractions <- sapply(as.matrix(AquiferZoneDryFractions), unlist) + sapply(as.matrix(AquiferZoneIrrigFractions),unlist)
