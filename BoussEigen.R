@@ -1,51 +1,37 @@
-#Tim Kerr
-#Aqualinc
-#October 2015
-
-#This function takes input data for a catchment about vadose zone recharge, groundwater pumping, soil, the vadose zone and aquifer properties
-#and simulates observed streamflow and well levels.
-#Equations are from:
-# Bidwell, V., Burbery, L., 2011. Groundwater Data Analysis - quantifying aquifer dynamics. Prepared for Envirolink Project 420-NRLC50 (No. 4110/1). Lincoln Ventures Ltd.
-# which in turn cites the following, though note that the symbol labels are different.
-# Bidwell, V.J., Stenger, R., Barkle, G.F., 2008. Dynamic analysis of groundwater discharge and partial-area contribution to Pukemanga Stream, New Zealand. Hydrol. Earth Syst. Sci. 12, 975-987. doi:10.5194/hess-12-975-2008
-#
-# Sloan, W.T., 2000. A physics-based function for modeling transient groundwater discharge at the watershed scale. Water Resour. Res. 36, 225-241. doi:10.1029/1999WR900221
-#
-#At no extra charge are a couple of plot functions at the end, one called bouss.plot() and the other bouss.plot2() which both take the result from bouss.eigen as their arguments.
-
-#**********************************
-#  Version Description                                Person        Date
-#  0.0   Initial version                              Tim Kerr      2nd October 2015 
-
-#**********************************
-# To-do list
-# 
-#
-#
-# An example call
-
-#fishDischarge <- bouss.eigen(WellDistance=66000,ZoneLengths=c(35600,5700,8900,15800),Storativity=0.01,Transmisivity=313632,DischargeScaleFactor=950,RechargeData=fishrecharge,GWBypassFlow=1)
+#' An eigenvector implementation of the one-dimensional Dupuit-Bousinesq grounwater equation
+#'
+#'This function takes input data for a catchment about vadose zone recharge, groundwater pumping, soil, the vadose zone and aquifer properties
+#'and simulates observed streamflow and well levels.
+#'Equations are from:
+#' Bidwell, V., Burbery, L., 2011. Groundwater Data Analysis - quantifying aquifer dynamics. Prepared for Envirolink Project 420-NRLC50 (No. 4110/1). Lincoln Ventures Ltd.
+#' which in turn cites the following, though note that the symbol labels are different.
+#' Bidwell, V.J., Stenger, R., Barkle, G.F., 2008. Dynamic analysis of groundwater discharge and partial-area contribution to Pukemanga Stream, New Zealand. Hydrol. Earth Syst. Sci. 12, 975-987. doi:10.5194/hess-12-975-2008
+#' Sloan, W.T., 2000. A physics-based function for modeling transient groundwater discharge at the watershed scale. Water Resour. Res. 36, 225-241. doi:10.1029/1999WR900221
+#' @param WellDistance Distance the well is from the upper edge of the groundwater zone in metres
+#' @param Storativity                #the groundwater storativity, i.e. the fraction of space in the groundwater that is available for water
+#' @param Transmisivity              #the two dimensional flow rate of water through the groundwater m2 per day
+#' @param ZoneLengths                #the lengths (in metres) of each of the zones
+#' @param DischargeScaleFactor       #discharge to groundwater level response gain factor
+#' @param RechargeFileName           #The csv file with all the data in it. This is the daily timeseries of observed discharge and groundwater level, vadose recharge for each zone, river recharge to groundwater and groundwater pumping in mm
+#' @param GWBypassFlow               #The amount of discharge that "slips by" the flow recorder, effectively an offset. It could also be considered to be related to the initial depth to the GW, so it can be a negative number. Ideally calibrate for this using the mean error.                                       
+#' @param InitialEigenState          #This is a pseudo offset for the groundwater level, but is not quite......
+#' @keywords groundwater, hydrology
+#' @export
+#' @examples
+#' fishRecharge<-vadose.recharge(ZoneStorageTime=c(4,3,3,3),AquiferZoneDryFractions = list(c(0.8,0.8,0.8,0.8),c(0,0,0,0),c(0,0,0.193,0.8263)),AquiferZoneIrrigFractions=list(c(0,0,0,0),c(0,0,0,0),c(0,0,0.0069,0.1737)),RiverRechargeFractions=c(1,1,0.958,1),RechargeFileName="GoldenBayLandSurfaceRechargeData.csv")
+#' fishDischarge <- bouss.eigen(WellDistance=66000,ZoneLengths=c(35600,5700,8900,15800),Storativity=0.01,Transmisivity=313632,DischargeScaleFactor=950,RechargeData=fishRecharge,GWBypassFlow=1)
 
 
 
 bouss.eigen <- function(WellDistance=65340,Storativity=0.0075,Transmisivity=71940000,
                         ZoneLengths=c(35600,5700,8900,15800),DischargeScaleFactor=500,
                         RechargeData=ZoneVadoseRecharge,GWBypassFlow=1,InitialEigenState=0)
-#*****************************************
-  #Description of arguments:
-  #WellDistance               #distance the well is from the upper edge of the groundwater zone in metres
-  #Storativity                #the groundwater storativity, i.e. the fraction of space in the groundwater that is available for water
-  #Transmisivity              #the two dimensional flow rate of water through the groundwater m2 per day
-  #ZoneLengths                #the lengths (in metres) of each of the zones
-  #DischargeScaleFactor       #discharge to groundwater level response gain factor
-  #RechargeFileName           #The csv file with all the data in it. This is the daily timeseries of observed discharge and groundwater level, vadose recharge for each zone, river recharge to groundwater and groundwater pumping in mm
-  #GWBypassFlow               #The amount of discharge that "slips by" the flow recorder, effectively an offset. It could also be considered to be related to the initial depth to the GW, so it can be a negative number. Ideally calibrate for this using the mean error.                                       
-#*******************************************
+
 {
 #Load specific libraries
 library(hydroTSM) #this is used to generate the flow duration curve from the discharge timeseries
 library(TTR)      #this provides the MovingAverage functions (in particular SMA, Simple Moving Average and EMA exponential weighted moving average)
-
+library(zoo)
 
 NumberEigenvalues          <-  66                                                                #The greater the number the greater the convergence to a true Boussinesq estimate. Cost is time and memeory
 
@@ -190,23 +176,3 @@ CatchmentTimeseries <- as.zoo(CatchmentTimeseries,as.Date(row.names(CatchmentTim
 } #end of function
 
 
-
-#The following are useful for Takaka observed data
-#Observed <- read.csv("Observeddata.csv")
-#ObservedZoo <- read.zoo(Observeddata,format="%d/%m/%Y")
-#The observed data are then individual columns of ObserveddataZoo
-#The estimated discharge is the 4th column of the discharge zoo
-#An example of calling the following is:
-#bouss.plot(PupuMainSpringdischarge[,4],ObserveddataZoo[,2])
-#or for a select part of the series, subset them first using window, e.g.
-#bouss.plot(PupuMainSpringdischarge[,4],ObserveddataZoo[,2]),start="1980-01-01",end="1980-01-06")
-bouss.plot <- function(EstimatedTimeseries,ObservedTimeseries,startDate=NULL,endDate=NULL) {
-  library(hydroGOF)
-  
-#  observed   <- timeseries[,4]
-#  estimated  <- timeseries[,4]
-  Estimated <- window(EstimatedTimeseries,start=startDate,end=endDate)
-  Observed <- window(ObservedTimeseries,start=startDate,end=endDate)
-  ggof(Estimated,Observed,lwd=c(1.5,1.5),pch=c(".","."),lty=c(1,1),col=c("red","black"))
-  
-}
