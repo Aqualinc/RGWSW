@@ -1,0 +1,23 @@
+ABOUT:
+
+LIMSIM is currently driven based on:
+    •	A-block Surface water allocation rules as proportions of MALF (minimum flows and total allocation)
+    •	REC reach characteristics that are fixed and natural
+    •	REC reach land cover characteristics that may potentially change
+LIMSIM attributes that are currently modelled:
+    1.	The percentage of time abstraction is stopped due to minimum flows (%)
+    2.	The percentage of time abstraction is restricted due to management flows (%)
+    3.	The reliability of the take (% of total demand taken)
+    4.	The percentage of the upstream irrigable area irrigated
+    5.	The fraction of the allocated water used
+    6.	Clarity
+    7.	MCI 
+    8.	Reduction in River Width
+    9.	Periphyton: mean filaments; Max annual Filaments; mean mats max; annual mats (Snelder)
+    10.	Change in various fish species habitat
+“Internal” attributes used in LIMSIM include:
+    1.	Flow duration curves (NIWA)
+    2.	Flow statistics (MALF, BFI, FREx, nNeg, Reversals) (NIWA)
+    3.	Change in Flow statistics (Aqualinc)
+    4.	Water quality variables (Mean: DRP, TN, NO3N, TP, E.Coli) (McDowell/Snelder)
+    a.	NOTE: water quality variables now are driven by LAND COVER.  We estimate changes in Land Use/Management by moving within the confidence intervals of these models.
